@@ -1,0 +1,68 @@
+import MetaTrader5 as mt5
+import pandas as pd
+import numpy as np
+import time
+from flask import Flask
+
+# Initialisation du serveur Flask
+app = Flask(__name__)
+
+# Configuration des paires de devises et unités de temps
+SYMBOLS = ["EURUSD", "USDCAD", "XAUUSD", "USDJPY", "GBPUSD"]
+TIMEFRAMES = {
+    "M5": mt5.TIMEFRAME_M5,
+    "H1": mt5.TIMEFRAME_H1,
+    "H4": mt5.TIMEFRAME_H4
+}
+RUNNING = False  # Variable pour démarrer/arrêter le bot
+
+# Connexion à MT5
+def connect_mt5():
+    if not mt5.initialize():
+        print("Erreur de connexion à MT5")
+        return False
+    print("Connexion réussie à MT5")
+    return True
+
+# Calcul du RSI
+def calculate_rsi(symbol, period=14, timeframe=mt5.TIMEFRAME_M5):
+    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, period + 1)
+    if rates is None or len(rates) < period:
+        return None
+
+    df = pd.DataFrame(rates)
+    df['change'] = df['close'].diff()
+    df['gain'] = np.where(df['change'] > 0, df['change'], 0)
+    df['loss'] = np.where(df['change'] < 0, -df['change'], 0)
+    
+    avg_gain = df['gain'].rolling(window=period, min_periods=1).mean()
+    avg_loss = df['loss'].rolling(window=period, min_periods=1).mean()
+    
+    rs = avg_gain / avg_loss
+    df['rsi'] = 100 - (100 / (1 + rs))
+    
+    return df['rsi'].iloc[-1]
+
+# Vérification de la tendance sur plusieurs unités de temps
+def get_trend(symbol):
+    trends = {}
+
+    for tf_name, tf in TIMEFRAMES.items():
+        rates = mt5.copy_rates_from_pos(symbol, tf, 0, 50)
+        if rates is None or len(rates) < 50:
+            return None
+
+        df = pd.DataFrame(rates)
+        df['ma200'] = df['close'].rolling(window=200).mean()
+
+        # Détermine la tendance par rapport à la MA 200
+        if df['close'].iloc[-1] > df['ma200'].iloc[-1]:
+            trends[tf_name] = "UP"
+        else:
+            trends[tf_name] = "DOWN"
+
+    return trends
+
+# Vérification des conditions d'achat et de vente
+def check_trade_conditions(symbol):
+    rates = mt5.copy_rates_from_pos(symbol, mt
