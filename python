@@ -1,0 +1,76 @@
+import MetaTrader5 as mt5
+import pandas as pd
+import numpy as np
+from flask import Flask
+
+# Initialisation de Flask
+app = Flask(__name__)
+
+# Fonction pour connecter à MetaTrader 5
+def connect_to_mt5():
+    if not mt5.initialize():
+        print("Échec de la connexion à MetaTrader5")
+        return False
+    return True
+
+# Fonction pour récupérer les données de l'API
+def get_data(symbol, timeframe, n=100):
+    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, n)
+    data = pd.DataFrame(rates)
+    data['time'] = pd.to_datetime(data['time'], unit='s')
+    return data
+
+# Exemple de stratégie de trading
+def trading_strategy():
+    symbol = "EURUSD"
+    timeframe = mt5.TIMEFRAME_M5  # 5 minutes
+
+    data = get_data(symbol, timeframe)
+
+    # Calculer la moyenne mobile 200
+    data['MA200'] = data['close'].rolling(window=200).mean()
+
+    # RSI
+    delta = data['close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    data['RSI'] = rsi
+
+    # Vérifier la stratégie d'achat/vente
+    last_price = data['close'].iloc[-1]
+    last_rsi = data['RSI'].iloc[-1]
+    ma200 = data['MA200'].iloc[-1]
+
+    if last_price > ma200 and 50 <= last_rsi <= 60:
+        print("Signal d'achat détecté")
+        # Code pour exécuter un ordre d'achat
+        # Exécuter l'ordre avec mt5
+        if mt5.order_send(symbol=symbol, action=mt5.ORDER_BUY, volume=1):
+            print("Ordre d'achat envoyé avec succès")
+
+    elif last_price < ma200 and 45 <= last_rsi <= 49:
+        print("Signal de vente détecté")
+        # Code pour exécuter un ordre de vente
+        # Exécuter l'ordre avec mt5
+        if mt5.order_send(symbol=symbol, action=mt5.ORDER_SELL, volume=1):
+            print("Ordre de vente envoyé avec succès")
+
+# Route Flask pour démarrer le bot
+@app.route('/start', methods=['GET'])
+def start_bot():
+    if connect_to_mt5():
+        trading_strategy()
+        return "Bot de trading lancé et stratégie exécutée", 200
+    else:
+        return "Échec de la connexion à MetaTrader5", 500
+
+# Route pour arrêter le bot (optionnel)
+@app.route('/stop', methods=['GET'])
+def stop_bot():
+    mt5.shutdown()
+    return "Connexion à MetaTrader5 fermée", 200
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
