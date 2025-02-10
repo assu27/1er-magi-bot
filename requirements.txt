@@ -1,4 +1,4 @@
-MetaTrader5
+git+https://github.com/MetaTrader5/MetaTrader5.gitMetaTrader5
 Flask
 pandas
 numpy 
